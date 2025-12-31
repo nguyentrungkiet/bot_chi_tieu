@@ -54,7 +54,7 @@ def status():
     }), 200
 
 def run_bot():
-    """Chạy Telegram bot trong thread riêng"""
+    """Chạy Telegram bot trong thread riêng với asyncio event loop"""
     global bot_status
     
     # Đợi một chút để Flask khởi động xong
@@ -68,9 +68,19 @@ def run_bot():
         bot_status['started_at'] = time.time()
         bot_status['running'] = True
         
+        # Tạo event loop mới cho thread này
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         # Import và chạy bot
         import bot as telegram_bot
-        telegram_bot.main()
+        
+        # Chạy async main trong event loop
+        try:
+            loop.run_until_complete(telegram_bot.async_main())
+        finally:
+            loop.close()
         
     except KeyboardInterrupt:
         logger.info("Bot dừng bởi người dùng")

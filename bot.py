@@ -14,9 +14,11 @@ if sys.platform == 'win32' and not os.getenv('KOYEB_DEPLOYMENT'):
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 import telegram  # Thêm import này để sử dụng telegram.error
+import gspread
 from datetime import datetime
 import logging
 import traceback
+import asyncio
 from database import Database
 from config import TOKEN
 
@@ -311,7 +313,8 @@ Các lệnh:
             
         await update.message.reply_text(info_message)
 
-def main():
+async def async_main():
+    """Async main function để chạy bot"""
     logger.info("Đang khởi động bot...")
     
     # Thêm xử lý ngoại lệ khi khởi động
@@ -344,8 +347,22 @@ def main():
         logger.info("Bot đã khởi động thành công!")
         logger.info("Bot đã sẵn sàng! Gửi lệnh /status trong Telegram để kiểm tra trạng thái.")
         
-        # Chạy bot
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        # Khởi động bot
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        
+        # Chạy mãi mãi cho đến khi bị dừng
+        try:
+            # Chờ cho đến khi nhận được signal dừng
+            stop_event = asyncio.Event()
+            await stop_event.wait()
+        except (KeyboardInterrupt, SystemExit):
+            logger.info("Đang dừng bot...")
+        finally:
+            await application.updater.stop()
+            await application.stop()
+            await application.shutdown()
     except telegram.error.Conflict:
         logger.error("LỖI: Đã có một phiên bản bot đang chạy với TOKEN này!")
         logger.error("Vui lòng kiểm tra và đóng tất cả các cửa sổ terminal đang chạy bot trước khi chạy lại.")
@@ -358,6 +375,15 @@ def main():
     except Exception as e:
         logger.error(f"LỖI: {e}")
         logger.error(f"Không thể khởi động bot: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+def main():
+    """Wrapper function to run async main"""
+    try:
+        asyncio.run(async_main())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Xử lý lỗi khi bot đang chạy"""
