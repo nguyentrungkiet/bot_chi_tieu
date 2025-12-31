@@ -1,10 +1,15 @@
 import io
 import sys
+import os
 
-# Sửa lỗi mã hóa Unicode trong console Windows
-if sys.platform == 'win32':
-    # Thay đổi stdout để xử lý Unicode đúng trên Windows
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+# Sửa lỗi mã hóa Unicode trong console Windows (chỉ khi chạy trực tiếp)
+# Không sửa stdout khi chạy trong thread hoặc trên server
+if sys.platform == 'win32' and not os.getenv('KOYEB_DEPLOYMENT'):
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    except (AttributeError, ValueError):
+        # Bỏ qua nếu không thể thay đổi stdout (ví dụ khi chạy trong thread)
+        pass
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
@@ -15,15 +20,25 @@ import traceback
 from database import Database
 from config import TOKEN
 
-# Thiết lập logging với xử lý lỗi Unicode
+# Thiết lập logging
+log_handlers = [logging.FileHandler("bot_log.txt", encoding='utf-8')]
+
+# Thêm StreamHandler chỉ khi an toàn
+try:
+    if sys.platform == 'win32' and not os.getenv('KOYEB_DEPLOYMENT'):
+        log_handlers.append(
+            logging.StreamHandler(io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace'))
+        )
+    else:
+        log_handlers.append(logging.StreamHandler())
+except (AttributeError, ValueError):
+    # Fallback nếu không thể tạo StreamHandler
+    pass
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
-    handlers=[
-        logging.FileHandler("bot_log.txt", encoding='utf-8'),
-        logging.StreamHandler(io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace') 
-                             if sys.platform == 'win32' else sys.stdout)
-    ]
+    handlers=log_handlers
 )
 logger = logging.getLogger(__name__)
 
@@ -297,7 +312,7 @@ Các lệnh:
         await update.message.reply_text(info_message)
 
 def main():
-    print("Đang khởi động bot...")
+    logger.info("Đang khởi động bot...")
     
     # Thêm xử lý ngoại lệ khi khởi động
     try:
@@ -307,10 +322,10 @@ def main():
         # Lấy thông tin sheet
         sheet_info = bot.db.get_sheet_info()
         if sheet_info:
-            print("\n===== THÔNG TIN GOOGLE SHEET =====")
-            print(f"📄 Tên: {sheet_info['title']}")
-            print(f"🔗 Link: {sheet_info['url']}")
-            print("===================================\n")
+            logger.info("===== THÔNG TIN GOOGLE SHEET =====")
+            logger.info(f"📄 Tên: {sheet_info['title']}")
+            logger.info(f"🔗 Link: {sheet_info['url']}")
+            logger.info("===================================")
         
         # Thêm handlers
         application.add_handler(CommandHandler("start", bot.start))
@@ -327,21 +342,21 @@ def main():
         
         # Log khi bot khởi động thành công
         logger.info("Bot đã khởi động thành công!")
-        print("Bot đã sẵn sàng! Gửi lệnh /status trong Telegram để kiểm tra trạng thái.")
+        logger.info("Bot đã sẵn sàng! Gửi lệnh /status trong Telegram để kiểm tra trạng thái.")
         
         # Chạy bot
         application.run_polling(allowed_updates=Update.ALL_TYPES)
     except telegram.error.Conflict:
-        print("LỖI: Đã có một phiên bản bot đang chạy với TOKEN này!")
-        print("Vui lòng kiểm tra và đóng tất cả các cửa sổ terminal đang chạy bot trước khi chạy lại.")
+        logger.error("LỖI: Đã có một phiên bản bot đang chạy với TOKEN này!")
+        logger.error("Vui lòng kiểm tra và đóng tất cả các cửa sổ terminal đang chạy bot trước khi chạy lại.")
         logger.error("Conflict: Đã có phiên bản bot đang chạy")
     except gspread.exceptions.SpreadsheetNotFound:
-        print("LỖI: Không tìm thấy Google Spreadsheet!")
-        print("Hãy tạo Google Spreadsheet mới và cập nhật file database.py")
-        print("Hoặc chạy check_sheets.py để kiểm tra kết nối")
+        logger.error("LỖI: Không tìm thấy Google Spreadsheet!")
+        logger.error("Hãy tạo Google Spreadsheet mới và cập nhật file database.py")
+        logger.error("Hoặc chạy check_sheets.py để kiểm tra kết nối")
         logger.error("Không tìm thấy spreadsheet")
     except Exception as e:
-        print(f"LỖI: {e}")
+        logger.error(f"LỖI: {e}")
         logger.error(f"Không thể khởi động bot: {e}")
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
