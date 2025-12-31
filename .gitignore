@@ -34,8 +34,10 @@ ENV/
 
 # Credentials & Config
 credentials.json
-config.py
 *.env
+
+# Local config override (for development)
+config.local.py
 
 # Logs
 *.log
