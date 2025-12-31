@@ -49,22 +49,43 @@ python bot.py
 
 Trên Koyeb Dashboard, thêm các environment variables sau:
 
-- `TELEGRAM_BOT_TOKEN`: Token bot Telegram của bạn
-- `SPREADSHEET_NAME`: Tên Google Sheet
-- `WORKSHEET_NAME`: Tên worksheet
+**Bắt buộc:**
+- `TELEGRAM_BOT_TOKEN`: Token bot Telegram của bạn (từ BotFather)
 - `GOOGLE_CREDENTIALS`: Nội dung file credentials.json (paste toàn bộ JSON)
+- `SPREADSHEET_ID`: ID của Google Sheet (lấy từ URL)
 
-### Bước 2: Sửa code để đọc từ environment variables
+**Tùy chọn:**
+- `SPREADSHEET_NAME`: Tên Google Sheet (mặc định: "Chi tiêu hàng ngày")
+- `WORKSHEET_NAME`: Tên worksheet (mặc định: "Chi tiêu")
+- `PORT`: Port cho web server (Koyeb tự động set)
 
-File `config.py` sẽ tự động đọc từ environment variables khi deploy.
+### Bước 2: Deploy trên Koyeb
 
-### Bước 3: Deploy
+1. Truy cập [Koyeb Dashboard](https://app.koyeb.com)
+2. Click **Create App** → **Deploy from GitHub**
+3. Chọn repository: `nguyentrungkiet/bot_chi_tieu`
+4. Chọn branch: `main`
+5. **Builder**: Buildpack
+6. **Build command**: Để trống (tự động detect)
+7. **Run command**: `python web.py` (từ Procfile)
+8. **Instance type**: Nano hoặc Micro
+9. **Regions**: Chọn 1 region gần bạn
+10. Thêm **Environment variables** như ở Bước 1
+11. Click **Deploy**
 
-1. Kết nối GitHub repository với Koyeb
-2. Chọn branch `main`
-3. Koyeb sẽ tự động detect Python app qua `requirements.txt`
-4. Set build command: `pip install -r requirements.txt`
-5. Set run command: `python bot.py`
+### Bước 3: Lấy Google Credentials JSON
+
+1. Truy cập [Google Cloud Console](https://console.cloud.google.com/)
+2. Tạo Service Account và download file JSON
+3. Copy toàn bộ nội dung file JSON
+4. Paste vào biến `GOOGLE_CREDENTIALS` trên Koyeb
+
+### Lưu ý quan trọng
+
+- Bot chạy với Flask web server để pass health check của Koyeb
+- Web server expose các endpoint: `/`, `/health`, `/status`
+- Bot Telegram chạy trong background thread
+- Koyeb sẽ tự động restart nếu service down
 
 ## Cấu trúc project
 
