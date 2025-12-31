@@ -5,6 +5,7 @@ import traceback
 import logging
 import json
 import os
+from config import SPREADSHEET_ID
 
 logger = logging.getLogger(__name__)
 
@@ -14,15 +15,23 @@ class Database:
             # Tạo phạm vi quyền truy cập
             scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
             
-            # Đường dẫn đến file credentials.json
-            credentials_path = "credentials.json"
+            # Kiểm tra xem có Google credentials từ environment variable không
+            google_creds_env = os.getenv('GOOGLE_CREDENTIALS')
             
-            # Xác thực với Google Sheets
-            creds = ServiceAccountCredentials.from_json_keyfile_name(credentials_path, scope)
+            if google_creds_env:
+                # Nếu có credentials từ environment variable (dành cho deployment)
+                logger.info("Sử dụng Google credentials từ environment variable")
+                creds_dict = json.loads(google_creds_env)
+                creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+            else:
+                # Nếu không có, sử dụng file credentials.json (dành cho local)
+                credentials_path = "credentials.json"
+                logger.info("Sử dụng Google credentials từ file credentials.json")
+                creds = ServiceAccountCredentials.from_json_keyfile_name(credentials_path, scope)
+            
             client = gspread.authorize(creds)
             
-            # Sử dụng spreadsheet ID cụ thể từ link được cung cấp
-            SPREADSHEET_ID = "1nqSKi1q8wXZeP66DYYKmZhSvWnrh1RrrXjB4rx6rT6s"
+            # Sử dụng spreadsheet ID từ config
             logger.info(f"Đang kết nối đến Google Sheet với ID: {SPREADSHEET_ID}")
             
             try:
