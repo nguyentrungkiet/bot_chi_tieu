@@ -38,6 +38,7 @@ credentials.json
 
 # Local config override (for development)
 config.local.py
+config_local.py
 
 # Logs
 *.log
