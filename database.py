@@ -41,32 +41,32 @@ class Database:
                 
                 # Kiểm tra và sử dụng worksheet
                 try:
-                    self.worksheet = self.spreadsheet.worksheet("Sheet1")
-                    logger.info("Đã kết nối đến worksheet: Sheet1")
+                    # Ưu tiên sử dụng worksheet "Chi tiêu"
+                    self.worksheet = self.spreadsheet.worksheet("Chi tiêu")
+                    logger.info("Đã kết nối đến worksheet: Chi tiêu")
                     
-                    # Cập nhật tiêu đề nếu cần
+                    # Kiểm tra tiêu đề
                     headers = self.worksheet.row_values(1)
-                    if "Ngày" in headers and "Thời gian" in headers:
-                        # Có cả "Ngày" và "Thời gian", cần cập nhật tiêu đề
-                        logger.info("Cập nhật tiêu đề để gộp Ngày và Thời gian")
-                        new_headers = ["Thời gian", "Mô tả", "Số tiền", "Người dùng"]
-                        self.worksheet.clear()
-                        self.worksheet.append_row(new_headers)
-                    elif not headers:
+                    if not headers:
                         # Nếu worksheet trống, tạo tiêu đề mới
                         logger.info("Worksheet trống, thêm tiêu đề mới")
-                        self.worksheet.append_row(["Thời gian", "Mô tả", "Số tiền", "Người dùng"])
+                        self.worksheet.append_row(["Ngày", "Nội dung", "Số tiền", "Người nhập"])
                         
                 except gspread.exceptions.WorksheetNotFound:
-                    # Sử dụng worksheet đầu tiên nếu không tìm thấy Sheet1
-                    self.worksheet = self.spreadsheet.get_worksheet(0)
-                    logger.info(f"Sử dụng worksheet đầu tiên: {self.worksheet.title}")
+                    # Nếu không tìm thấy "Chi tiêu", thử "Sheet1"
+                    try:
+                        self.worksheet = self.spreadsheet.worksheet("Sheet1")
+                        logger.info("Đã kết nối đến worksheet: Sheet1")
+                    except gspread.exceptions.WorksheetNotFound:
+                        # Sử dụng worksheet đầu tiên
+                        self.worksheet = self.spreadsheet.get_worksheet(0)
+                        logger.info(f"Sử dụng worksheet đầu tiên: {self.worksheet.title}")
                     
                     # Kiểm tra nếu worksheet trống, thêm tiêu đề
                     values = self.worksheet.get_all_values()
                     if not values:
                         logger.info("Worksheet trống, thêm tiêu đề")
-                        self.worksheet.append_row(["Thời gian", "Mô tả", "Số tiền", "Người dùng"])
+                        self.worksheet.append_row(["Ngày", "Nội dung", "Số tiền", "Người nhập"])
                 
             except gspread.exceptions.APIError as e:
                 logger.error(f"Lỗi API khi kết nối đến spreadsheet: {e}")
@@ -135,25 +135,21 @@ class Database:
                 
             # Lấy tiêu đề
             headers = all_values[0]
-            user_idx = headers.index("Người dùng") if "Người dùng" in headers else 3
+            # Tìm index cột người dùng - hỗ trợ nhiều tên
+            user_idx = None
+            for idx, h in enumerate(headers):
+                if h.strip() in ["Người dùng", "Người nhập", "User"]:
+                    user_idx = idx
+                    break
+            if user_idx is None:
+                user_idx = 3  # Default
             
             # Tìm chi tiêu mới nhất
             for i in range(len(all_values)-1, 0, -1):
                 row = all_values[i]
-                if row[user_idx] == user:
-                    # Tạo dictionary từ row với headers
-                    expense = {}
-                    for j, header in enumerate(headers):
-                        if j < len(row):
-                            expense[header] = row[j]
-                    
-                    # Chuyển đổi số tiền thành số
-                    if "Số tiền" in expense:
-                        try:
-                            expense["Số tiền"] = int(expense["Số tiền"])
-                        except:
-                            pass
-                            
+                if len(row) > user_idx and row[user_idx] == user:
+                    # Tạo dictionary từ row với mapping chuẩn
+                    expense = self._map_row_to_expense(headers, row)
                     return expense, i+1  # +1 vì index trong worksheet bắt đầu từ 1
                     
             return None, None
@@ -172,6 +168,41 @@ class Database:
         except Exception as e:
             logger.error(f"Lỗi khi xóa chi tiêu: {str(e)}")
             return False
+    
+    def _map_row_to_expense(self, headers, row):
+        """Map dữ liệu từ row sang dictionary với tên chuẩn"""
+        expense = {}
+        
+        # Mapping tên cột
+        column_mapping = {
+            "Thời gian": ["Thời gian", "Ngày", "Ngày ", "Date"],
+            "Mô tả": ["Mô tả", "Nội dung", "Description"],
+            "Số tiền": ["Số tiền", "Amount"],
+            "Người dùng": ["Người dùng", "Người nhập", "User"]
+        }
+        
+        # Tạo reverse mapping
+        header_to_standard = {}
+        for standard, alternatives in column_mapping.items():
+            for alt in alternatives:
+                header_to_standard[alt.strip()] = standard
+        
+        # Map dữ liệu
+        for j, header in enumerate(headers):
+            if j < len(row):
+                standard_name = header_to_standard.get(header.strip(), header)
+                expense[standard_name] = row[j]
+        
+        # Chuyển đổi số tiền thành số
+        if "Số tiền" in expense:
+            try:
+                # Loại bỏ các ký tự không phải số
+                amount_str = expense["Số tiền"].replace("đ", "").replace(",", "").replace(".", "").strip()
+                expense["Số tiền"] = int(amount_str) if amount_str else 0
+            except:
+                expense["Số tiền"] = 0
+        
+        return expense
             
     def get_daily_expenses(self, date):
         """Lấy chi tiêu theo ngày"""
@@ -183,28 +214,24 @@ class Database:
                 
             # Lấy tiêu đề
             headers = all_values[0]
-            datetime_idx = headers.index("Thời gian") if "Thời gian" in headers else 0
+            # Tìm index cột ngày/thời gian - hỗ trợ nhiều tên
+            datetime_idx = None
+            for idx, h in enumerate(headers):
+                if h.strip() in ["Thời gian", "Ngày", "Ngày ", "Date"]:
+                    datetime_idx = idx
+                    break
+            if datetime_idx is None:
+                datetime_idx = 0  # Default
             
             # Tìm các chi tiêu theo ngày
             expenses = []
             for i in range(1, len(all_values)):
                 row = all_values[i]
-                # Kiểm tra nếu ngày trong chuỗi datetime trùng với ngày được yêu cầu
-                if row[datetime_idx].startswith(date):
-                    # Tạo dictionary từ row với headers
-                    expense = {}
-                    for j, header in enumerate(headers):
-                        if j < len(row):
-                            expense[header] = row[j]
-                    
-                    # Chuyển đổi số tiền thành số
-                    if "Số tiền" in expense:
-                        try:
-                            expense["Số tiền"] = int(expense["Số tiền"])
-                        except:
-                            pass
-                            
-                    expenses.append(expense)
+                if len(row) > datetime_idx:
+                    # Kiểm tra nếu ngày trong chuỗi datetime trùng với ngày được yêu cầu
+                    if row[datetime_idx].startswith(date):
+                        expense = self._map_row_to_expense(headers, row)
+                        expenses.append(expense)
                     
             return expenses
         except Exception as e:
